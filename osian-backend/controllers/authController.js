@@ -20,21 +20,33 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: 'User with this email already exists.' });
         }
 
-        // 2. Create a new user instance
+        // 2. Generate username if not provided
+        const firstChar = (name && name[0]) ? name[0].toLowerCase() : (email && email[0] ? email[0].toLowerCase() : 'u');
+        const sum = (email || '').toLowerCase().split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+        let username = `@${firstChar}${String(sum % 1000000).padStart(6, '0')}`;
+        try {
+            const exists = await User.findOne({ username });
+            if (exists) {
+                username = `${username}${Math.floor(Math.random() * 10000)}`;
+            }
+        } catch (_) {}
+
+        // 3. Create a new user instance
         user = new User({
             name,
             email,
-            password // The pre-save hook in the model will hash this
+            password, // The pre-save hook in the model will hash this
+            username
         });
 
-        // 3. Generate and save OTP
+        // 4. Generate and save OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         user.otp = otp;
         user.otpExpires = Date.now() + 10 * 60 * 1000; // OTP expires in 10 minutes
 
         await user.save();
 
-        // 4. Send OTP via email
+        // 5. Send OTP via email
         try {
             await sendOTP(user.email, otp);
         } catch (emailError) {
@@ -42,7 +54,7 @@ exports.register = async (req, res) => {
             // Even if email fails, don't block registration. User can resend OTP.
         }
 
-        // 5. Respond to frontend
+        // 6. Respond to frontend
         // The frontend needs the userId to call the verify-otp endpoint
         res.status(201).json({
             success: true,
