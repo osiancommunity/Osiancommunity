@@ -43,7 +43,12 @@ async function connectDatabase() {
     }
   }
   await mongoose.connect(uri);
-  console.log('Connected to MongoDB:', uri);
+  try {
+    const safeUri = String(uri).replace(/\/\/.*@/, '//***@');
+    console.log('Connected to MongoDB:', safeUri);
+  } catch (_) {
+    console.log('Connected to MongoDB');
+  }
   connected = true;
 }
 
@@ -80,6 +85,22 @@ app.use('/api/analytics', analyticsRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Osian Backend is running' });
+});
+
+app.get('/api/health/db', (req, res) => {
+  const state = mongoose.connection.readyState; // 0=disconnected,1=connected,2=connecting,3=disconnecting
+  res.json({ connected: state === 1, state });
+});
+
+app.get('/api/debug/env', (req, res) => {
+  res.json({
+    has_MONGODB_URI: !!process.env.MONGODB_URI,
+    has_JWT_SECRET: !!process.env.JWT_SECRET,
+    has_EMAIL_HOST: !!process.env.EMAIL_HOST,
+    has_EMAIL_USER: !!process.env.EMAIL_USER,
+    has_EMAIL_PASS: !!process.env.EMAIL_PASS,
+    vercel: !!process.env.VERCEL
+  });
 });
 
 // Root route for Vercel project landing
