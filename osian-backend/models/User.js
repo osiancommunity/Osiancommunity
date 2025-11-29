@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 // Sub-schema for the user's profile information.
 // This keeps the main User schema cleaner.
