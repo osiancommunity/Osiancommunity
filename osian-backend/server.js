@@ -42,7 +42,14 @@ async function connectDatabase() {
       return;
     }
   }
-  await mongoose.connect(uri);
+  const connectOpts = {
+    serverSelectionTimeoutMS: 5000,
+    retryWrites: true
+  };
+  if (process.env.MONGODB_DBNAME) {
+    connectOpts.dbName = process.env.MONGODB_DBNAME;
+  }
+  await mongoose.connect(uri, connectOpts);
   try {
     const safeUri = String(uri).replace(/\/\/.*@/, '//***@');
     console.log('Connected to MongoDB:', safeUri);
