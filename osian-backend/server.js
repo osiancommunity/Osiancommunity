@@ -73,6 +73,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Osian Backend is running' });
 });
 
+// Root route (for Vercel project landing)
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'OK', service: 'osian-backend', docs: '/api/health' });
+});
+
 // Backend-only: return 404 for non-API routes
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not Found' });
