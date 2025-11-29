@@ -28,7 +28,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true })); // For form data
 // Connect to MongoDB (require real URI on Vercel; optional local fallback)
 async function connectDatabase() {
   if (mongoose.connection && mongoose.connection.readyState === 1) {
-    return; // already connected
+    return;
   }
   const isServerless = !!process.env.VERCEL;
   const uri = process.env.MONGODB_URI;
@@ -38,7 +38,7 @@ async function connectDatabase() {
     } else {
       const local = 'mongodb://localhost:27017/osian';
       await mongoose.connect(local, {
-        serverSelectionTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 30000,
         retryWrites: true
       });
       console.log('Connected to local MongoDB:', local);
@@ -46,21 +46,33 @@ async function connectDatabase() {
     }
   }
   const connectOpts = {
-    serverSelectionTimeoutMS: 10000,
-    connectTimeoutMS: 10000,
-    socketTimeoutMS: 45000,
+    serverSelectionTimeoutMS: 30000,
+    connectTimeoutMS: 30000,
+    socketTimeoutMS: 60000,
     retryWrites: true
   };
   if (process.env.MONGODB_DBNAME) {
     connectOpts.dbName = process.env.MONGODB_DBNAME;
   }
-  await mongoose.connect(uri, connectOpts);
-  try {
-    const safeUri = String(uri).replace(/\/\/.*@/, '//***@');
-    console.log('Connected to MongoDB:', safeUri);
-  } catch (_) {
-    console.log('Connected to MongoDB');
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await mongoose.connect(uri, connectOpts);
+      try {
+        const safeUri = String(uri).replace(/\/\/.*@/, '//***@');
+        console.log('Connected to MongoDB:', safeUri);
+      } catch (_) {
+        console.log('Connected to MongoDB');
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
   }
+  throw lastErr;
 }
 
 // Ensure DB is connected before handling requests
