@@ -4,8 +4,8 @@ const cors = require('cors');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Load environment variables from parent directory
-dotenv.config({ path: '../.env' });
+// Load environment variables (Vercel injects envs automatically)
+dotenv.config();
 
 const app = express();
 
@@ -23,30 +23,28 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' })); // Increase payload limit for large quiz data
 app.use(express.urlencoded({ limit: '50mb', extended: true })); // For form data
 
-// --- ADD THIS TO SERVE THE FRONTEND ---
-// Serve static files from the parent directory (where index.html is)
-app.use(express.static(path.join(__dirname, '..')));
+// In backend-only deploys, do not serve static files
 
-// Connect to MongoDB with fallback to in-memory server for development
+// Connect to MongoDB (require real URI on Vercel; optional local fallback)
+let connected = false;
 async function connectDatabase() {
-  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/osian';
-  try {
-    await mongoose.connect(uri);
-    console.log('Connected to MongoDB:', uri);
-  } catch (err) {
-    console.error('MongoDB connection error:', err.message);
-    console.warn('Falling back to in-memory MongoDB for development...');
-    try {
-      const { MongoMemoryServer } = require('mongodb-memory-server');
-      const mongod = await MongoMemoryServer.create();
-      const memUri = mongod.getUri();
-      await mongoose.connect(memUri);
-      console.log('Connected to in-memory MongoDB');
-    } catch (memErr) {
-      console.error('Failed to start in-memory MongoDB:', memErr.message);
-      process.exit(1);
+  if (connected) return;
+  const isServerless = !!process.env.VERCEL;
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    if (isServerless) {
+      throw new Error('MONGODB_URI is not set in environment');
+    } else {
+      const local = 'mongodb://localhost:27017/osian';
+      await mongoose.connect(local);
+      console.log('Connected to local MongoDB:', local);
+      connected = true;
+      return;
     }
   }
+  await mongoose.connect(uri);
+  console.log('Connected to MongoDB:', uri);
+  connected = true;
 }
 
 connectDatabase();
@@ -75,10 +73,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Osian Backend is running' });
 });
 
-// --- ADD THIS TO HANDLE FRONTEND ROUTING ---
-// For any route that is not an API route, send the index.html file
+// Backend-only: return 404 for non-API routes
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'index.html'));
+  res.status(404).json({ success: false, message: 'Not Found' });
 });
 
 // --- Global Error Handler ---
