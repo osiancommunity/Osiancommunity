@@ -26,9 +26,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true })); // For form data
 // Backend-only deploy: do not serve static files
 
 // Connect to MongoDB (require real URI on Vercel; optional local fallback)
-let connected = false;
 async function connectDatabase() {
-  if (connected) return;
+  if (mongoose.connection && mongoose.connection.readyState === 1) {
+    return; // already connected
+  }
   const isServerless = !!process.env.VERCEL;
   const uri = process.env.MONGODB_URI;
   if (!uri) {
@@ -36,14 +37,18 @@ async function connectDatabase() {
       throw new Error('MONGODB_URI is not set in environment');
     } else {
       const local = 'mongodb://localhost:27017/osian';
-      await mongoose.connect(local);
+      await mongoose.connect(local, {
+        serverSelectionTimeoutMS: 10000,
+        retryWrites: true
+      });
       console.log('Connected to local MongoDB:', local);
-      connected = true;
       return;
     }
   }
   const connectOpts = {
-    serverSelectionTimeoutMS: 5000,
+    serverSelectionTimeoutMS: 10000,
+    connectTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
     retryWrites: true
   };
   if (process.env.MONGODB_DBNAME) {
@@ -56,7 +61,6 @@ async function connectDatabase() {
   } catch (_) {
     console.log('Connected to MongoDB');
   }
-  connected = true;
 }
 
 // Ensure DB is connected before handling requests
