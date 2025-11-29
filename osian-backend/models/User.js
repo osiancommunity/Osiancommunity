@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 // Sub-schema for the user's profile information.
 // This keeps the main User schema cleaner.
@@ -112,7 +112,7 @@ UserSchema.pre('save', async function(next) {
     next();
 });
 
-UserSchema.pre('save', async function(next) {
+UserSchema.pre('validate', async function(next) {
     if (!this.username) {
         const n = (this.name && this.name[0]) ? this.name[0].toLowerCase() : (this.email && this.email[0] ? this.email[0].toLowerCase() : 'u');
         const sum = (this.email || '').toLowerCase().split('').reduce((a, c) => a + c.charCodeAt(0), 0);
