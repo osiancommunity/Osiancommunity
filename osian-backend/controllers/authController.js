@@ -1,7 +1,8 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const { sendOTP, sendWelcomeEmail } = require('../config/nodemailer');
 
 /**
@@ -176,6 +177,10 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     try {
+        if (mongoose.connection.readyState !== 1) {
+            console.error('Login blocked: database not connected');
+            return res.status(503).json({ message: 'Service temporarily unavailable. Please retry in a moment.' });
+        }
         console.log(`Login attempt for email: ${email}`);
 
         // Validate input
