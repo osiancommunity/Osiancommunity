@@ -107,6 +107,18 @@ UserSchema.add({
     }
 });
 
+// OTP-based password reset fields
+UserSchema.add({
+    resetOtp: {
+        type: String,
+        default: null
+    },
+    resetOtpExpires: {
+        type: Date,
+        default: null
+    }
+});
+
 // Middleware to hash password before saving the user document
 UserSchema.pre('save', async function(next) {
     // Only run this function if password was actually modified

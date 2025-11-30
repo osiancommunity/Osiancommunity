@@ -123,8 +123,19 @@ async function getQuizById(req, res) {
             return res.status(404).json({ message: 'Quiz not found.' });
         }
 
+        // Auto-transition upcoming -> active when schedule time passes
+        if (quiz.status === 'upcoming' && quiz.scheduleTime && new Date(quiz.scheduleTime) <= new Date()) {
+            quiz.status = 'active';
+            try { await quiz.save(); } catch (_) {}
+        }
+
         // If a regular user, remove correct answers for security
         if (req.user && req.user.role === 'user') {
+            // Enforce schedule gate: do not expose questions before start time
+            if (quiz.scheduleTime && new Date(quiz.scheduleTime) > new Date()) {
+                const startsAt = new Date(quiz.scheduleTime).toISOString();
+                return res.status(403).json({ message: `This quiz starts at ${startsAt}. Please return at the scheduled time.` });
+            }
             const quizForUser = quiz.toObject(); // Convert Mongoose document to plain object
             quizForUser.questions = quizForUser.questions.map(q => {
                 if (q.questionType === 'mcq') {
@@ -177,6 +188,13 @@ async function updateQuiz(req, res) {
         quiz.price = price !== undefined ? price : quiz.price;
         quiz.coverImage = coverImage || quiz.coverImage;
         quiz.questions = questions || quiz.questions;
+
+        // Recalculate status based on schedule
+        if (quiz.scheduleTime && new Date(quiz.scheduleTime) > new Date()) {
+            quiz.status = 'upcoming';
+        } else if (quiz.status === 'upcoming') {
+            quiz.status = 'active';
+        }
 
         quiz.updatedAt = Date.now();
         await quiz.save();

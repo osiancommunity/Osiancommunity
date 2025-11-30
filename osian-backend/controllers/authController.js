@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const { sendOTP, sendWelcomeEmail, sendPasswordResetEmail } = require('../config/nodemailer');
+const { sendOTP, sendWelcomeEmail, sendPasswordResetEmail, sendPasswordResetOtpEmail } = require('../config/nodemailer');
 
 /**
  * @desc    Register a new user and send OTP
@@ -363,5 +363,47 @@ exports.resetPassword = async (req, res) => {
     } catch (error) {
         console.error('Reset password error:', error);
         return res.status(400).json({ message: 'Invalid or expired reset token. Please try again.' });
+    }
+};
+
+// Secondary reset via OTP
+exports.forgotPasswordOtp = async (req, res) => {
+    try {
+        const email = String((req.body.email || '').trim().toLowerCase());
+        const genericMsg = 'If the email exists, a reset OTP has been sent.';
+        if (!email) return res.status(200).json({ message: genericMsg });
+        const user = await User.findOne({ email });
+        if (!user) return res.status(200).json({ message: genericMsg });
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.resetOtp = otp;
+        user.resetOtpExpires = Date.now() + 10 * 60 * 1000;
+        await user.save();
+        try { await sendPasswordResetOtpEmail(user.email, user.name, otp); } catch (e) { console.error('Reset OTP email error:', e); }
+        return res.status(200).json({ message: genericMsg });
+    } catch (error) {
+        console.error('Forgot password via OTP error:', error);
+        return res.status(200).json({ message: 'If the email exists, a reset OTP has been sent.' });
+    }
+};
+
+exports.resetPasswordOtp = async (req, res) => {
+    try {
+        const email = String((req.body.email || '').trim().toLowerCase());
+        const { otp, newPassword } = req.body || {};
+        if (!email || !otp || !newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+            return res.status(400).json({ message: 'Invalid request' });
+        }
+        const user = await User.findOne({ email }).select('+password');
+        if (!user || user.resetOtp !== otp || (user.resetOtpExpires || 0) < Date.now()) {
+            return res.status(400).json({ message: 'Invalid or expired OTP.' });
+        }
+        user.password = newPassword;
+        user.resetOtp = null;
+        user.resetOtpExpires = null;
+        await user.save();
+        return res.status(200).json({ message: 'Password has been reset successfully!' });
+    } catch (error) {
+        console.error('Reset password via OTP error:', error);
+        return res.status(400).json({ message: 'Invalid or expired OTP.' });
     }
 };
