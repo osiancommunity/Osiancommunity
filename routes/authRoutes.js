@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { register, verifyOtp, resendOtp, login, changePassword, devCreateDemoUser, registerDebug } = require('../controllers/authController');
+const { register, verifyOtp, resendOtp, login, changePassword, devCreateDemoUser, registerDebug, requestPasswordOtp, changePasswordWithOtp } = require('../controllers/authController');
 const { authenticateToken: protect } = require('../middleware/authMiddleware');
 
 // Public routes
@@ -17,5 +17,7 @@ router.post('/dev-create-demo', devCreateDemoUser);
 
 // Protected routes
 router.post('/change-password', protect, changePassword);
+router.post('/request-password-otp', protect, requestPasswordOtp);
+router.post('/change-password-otp', protect, changePasswordWithOtp);
 
 module.exports = router;

@@ -369,6 +369,68 @@ module.exports.changePassword = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Request OTP to change password (logged-in user)
+ * @route   POST /api/auth/request-password-otp
+ * @access  Private
+ */
+exports.requestPasswordOtp = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.otp = otp;
+        user.otpExpires = Date.now() + 10 * 60 * 1000;
+        await user.save();
+
+        try {
+            await sendOTP(user.email, otp);
+        } catch (emailError) {
+            console.error('Password OTP email error:', emailError);
+        }
+
+        res.json({ success: true, message: 'OTP sent to your email' });
+    } catch (error) {
+        console.error('Request password OTP error:', error);
+        res.status(500).json({ success: false, message: 'Failed to send OTP' });
+    }
+};
+
+/**
+ * @desc    Change password using OTP (logged-in user)
+ * @route   POST /api/auth/change-password-otp
+ * @access  Private
+ */
+exports.changePasswordWithOtp = async (req, res) => {
+    try {
+        const { otp, newPassword } = req.body || {};
+        const user = await User.findById(req.user.id).select('+password');
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        if (!otp || !newPassword || String(newPassword).length < 6) {
+            return res.status(400).json({ success: false, message: 'OTP and valid new password are required' });
+        }
+        if (!user.otp || !user.otpExpires || user.otpExpires < Date.now() || user.otp !== otp) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+        }
+
+        user.password = newPassword;
+        user.otp = undefined;
+        user.otpExpires = undefined;
+        await user.save();
+
+        res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Change password with OTP error:', error);
+        res.status(500).json({ success: false, message: 'Failed to change password' });
+    }
+};
+
 // Development helper: create a demo verified user
 exports.devCreateDemoUser = async (req, res) => {
     try {
