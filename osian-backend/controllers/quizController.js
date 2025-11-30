@@ -40,8 +40,12 @@ async function createQuiz(req, res) {
             createdBy: req.user.id // This comes from the auth middleware after token verification
         });
 
-        // Set status to 'active' for paid and regular quizzes, 'upcoming' if scheduled in future
-        if (scheduleTime && new Date(scheduleTime) > new Date()) {
+        // Status logic:
+        // - Paid quizzes are always 'active' (registration open immediately)
+        // - Other types: 'upcoming' if scheduled in future, else 'active'
+        if (String(quizType).toLowerCase() === 'paid') {
+            newQuiz.status = 'active';
+        } else if (scheduleTime && new Date(scheduleTime) > new Date()) {
             newQuiz.status = 'upcoming';
         } else {
             newQuiz.status = 'active';
@@ -189,8 +193,10 @@ async function updateQuiz(req, res) {
         quiz.coverImage = coverImage || quiz.coverImage;
         quiz.questions = questions || quiz.questions;
 
-        // Recalculate status based on schedule
-        if (quiz.scheduleTime && new Date(quiz.scheduleTime) > new Date()) {
+        // Recalculate status based on type and schedule
+        if (String(quiz.quizType).toLowerCase() === 'paid') {
+            quiz.status = 'active';
+        } else if (quiz.scheduleTime && new Date(quiz.scheduleTime) > new Date()) {
             quiz.status = 'upcoming';
         } else if (quiz.status === 'upcoming') {
             quiz.status = 'active';
@@ -319,8 +325,15 @@ async function getAdminQuizzes(req, res) {
     try {
         const adminId = req.user.id;
 
-        const quizzes = await Quiz.find({ createdBy: adminId })
+        let quizzes = await Quiz.find({ createdBy: adminId })
             .sort({ createdAt: -1 });
+
+        // Normalize: paid quizzes should show 'active'
+        const toUpdate = quizzes.filter(q => String(q.quizType).toLowerCase() === 'paid' && q.status !== 'active');
+        for (const q of toUpdate) {
+            q.status = 'active';
+            try { await q.save(); } catch (_) {}
+        }
 
         res.status(200).json({
             success: true,
