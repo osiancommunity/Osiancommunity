@@ -99,6 +99,14 @@ const UserSchema = new mongoose.Schema({
     timestamps: true // Automatically adds createdAt and updatedAt fields
 });
 
+// Password reset token for email-based reset flow
+UserSchema.add({
+    resetToken: {
+        type: String,
+        default: null
+    }
+});
+
 // Middleware to hash password before saving the user document
 UserSchema.pre('save', async function(next) {
     // Only run this function if password was actually modified

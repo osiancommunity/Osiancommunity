@@ -116,8 +116,37 @@ const sendResultNotification = async (email, name, subject, message, resultLink)
   }
 };
 
+const sendPasswordResetEmail = async (email, name, resetLink) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Password Reset Request for Osian',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Password Reset</h2>
+        <p>Dear ${name || 'User'},</p>
+        <p>You requested a password reset. Click the link below to create a new password:</p>
+        <p><a href="${resetLink}">${resetLink}</a></p>
+        <p>This link will expire in 15 minutes.</p>
+        <p>If you did not request this, please ignore this email.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #666; font-size: 12px;">This is an automated message from Osian. Please do not reply to this email.</p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Password reset email sent to:', email);
+  } catch (error) {
+    console.error('Error sending password reset email:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendOTP,
   sendWelcomeEmail,
-  sendResultNotification
+  sendResultNotification,
+  sendPasswordResetEmail
 };

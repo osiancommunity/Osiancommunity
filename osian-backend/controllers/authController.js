@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const { sendOTP, sendWelcomeEmail } = require('../config/nodemailer');
+const { sendOTP, sendWelcomeEmail, sendPasswordResetEmail } = require('../config/nodemailer');
 
 /**
  * @desc    Register a new user and send OTP
@@ -274,7 +274,7 @@ exports.login = async (req, res) => {
  * @route   POST /api/auth/change-password
  * @access  Private
  */
-exports.changePassword = async (req, res) => {
+module.exports.changePassword = async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
         // We need to fetch the user with the password to compare it.
@@ -296,5 +296,67 @@ exports.changePassword = async (req, res) => {
     } catch (error) {
         console.error('Change password error:', error);
         res.status(500).json({ success: false, message: 'Failed to change password', error: error.message });
+    }
+};
+
+exports.forgotPassword = async (req, res) => {
+    try {
+        const emailNorm = (req.body.email || '').trim().toLowerCase();
+        // Always respond with success to prevent email enumeration
+        const genericMsg = 'If a user with that email exists, a password reset link has been sent.';
+        if (!emailNorm) {
+            return res.status(200).json({ message: genericMsg });
+        }
+
+        const user = await User.findOne({ email: emailNorm });
+        if (!user) {
+            return res.status(200).json({ message: genericMsg });
+        }
+
+        const secret = process.env.RESET_SECRET || process.env.JWT_SECRET || 'reset-secret-dev';
+        const token = jwt.sign({ id: user._id }, secret, { expiresIn: '15m' });
+        user.resetToken = token;
+        await user.save();
+
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5500';
+        const resetLink = `${baseUrl}/reset-password.html?token=${token}`;
+        try {
+            await sendPasswordResetEmail(user.email, user.name, resetLink);
+        } catch (e) {
+            console.error('Password reset email error:', e);
+            // Do not reveal email errors to client
+        }
+
+        return res.status(200).json({ message: genericMsg });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        return res.status(200).json({ message: 'If a user with that email exists, a password reset link has been sent.' });
+    }
+};
+
+exports.resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body || {};
+        const secret = process.env.RESET_SECRET || process.env.JWT_SECRET || 'reset-secret-dev';
+        if (!token || !newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+            return res.status(400).json({ message: 'Invalid request' });
+        }
+        let decoded;
+        try {
+            decoded = jwt.verify(token, secret);
+        } catch (e) {
+            return res.status(400).json({ message: 'Invalid or expired reset token. Please try again.' });
+        }
+        const user = await User.findById(decoded.id).select('+password');
+        if (!user || user.resetToken !== token) {
+            return res.status(400).json({ message: 'Invalid or expired reset token. Please try again.' });
+        }
+        user.password = newPassword;
+        user.resetToken = null;
+        await user.save();
+        return res.status(200).json({ message: 'Password has been reset successfully!' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        return res.status(400).json({ message: 'Invalid or expired reset token. Please try again.' });
     }
 };
