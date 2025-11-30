@@ -138,7 +138,11 @@ async function getQuizById(req, res) {
             // Enforce schedule gate: do not expose questions before start time
             if (quiz.scheduleTime && new Date(quiz.scheduleTime) > new Date()) {
                 const startsAt = new Date(quiz.scheduleTime).toISOString();
-                return res.status(403).json({ message: `This quiz starts at ${startsAt}. Please return at the scheduled time.` });
+                return res.status(403).json({
+                    message: `This quiz starts at ${startsAt}. Please return at the scheduled time.`,
+                    startsAt,
+                    code: 'SCHEDULED_NOT_STARTED'
+                });
             }
             const quizForUser = quiz.toObject(); // Convert Mongoose document to plain object
             quizForUser.questions = quizForUser.questions.map(q => {
