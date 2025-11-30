@@ -318,8 +318,13 @@ exports.forgotPassword = async (req, res) => {
         user.resetToken = token;
         await user.save();
 
-        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5500';
-        const resetLink = `${baseUrl}/reset-password.html?token=${token}`;
+        const rawBase = process.env.FRONTEND_URL || '';
+        let baseUrl = rawBase && /^https?:\/\//.test(rawBase) ? rawBase : '';
+        const looksLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+        if (!baseUrl || looksLocal) {
+            baseUrl = process.env.FRONTEND_FALLBACK_URL || 'https://osiancommunity.github.io/Osiancommunity-frontend';
+        }
+        const resetLink = `${baseUrl.replace(/\/$/, '')}/reset-password.html?token=${token}`;
         try {
             await sendPasswordResetEmail(user.email, user.name, resetLink);
         } catch (e) {
