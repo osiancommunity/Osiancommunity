@@ -4,14 +4,18 @@ const Razorpay = require('razorpay');
 
 const Quiz = require('../models/Quiz');
 
-// Initialize Razorpay
+// Initialize Razorpay with environment-aware keys
 let razorpay;
+let currentKeyId = null;
 try {
-  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-    razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
-    });
+  const mode = (process.env.RAZORPAY_MODE || '').toLowerCase();
+  const isLive = mode === 'live';
+  const keyId = isLive ? (process.env.RAZORPAY_LIVE_KEY_ID || process.env.RAZORPAY_KEY_ID) : (process.env.RAZORPAY_TEST_KEY_ID || process.env.RAZORPAY_KEY_ID);
+  const keySecret = isLive ? (process.env.RAZORPAY_LIVE_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET) : (process.env.RAZORPAY_TEST_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET);
+
+  if (keyId && keySecret) {
+    razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    currentKeyId = keyId;
   } else {
     console.warn('Razorpay keys not configured. Payment features will be disabled.');
   }
@@ -21,11 +25,11 @@ try {
 
 const getRazorpayKey = (req, res) => {
   try {
-    if (!process.env.RAZORPAY_KEY_ID) {
+    if (!currentKeyId) {
       console.error('Razorpay Key ID is not set in environment variables.');
       return res.status(500).json({ success: false, message: 'Payment provider key is not configured.' });
     }
-    res.json({ keyId: process.env.RAZORPAY_KEY_ID });
+    res.json({ keyId: currentKeyId });
   } catch (error) {
     console.error('Get Razorpay key error:', error);
     res.status(500).json({ success: false, message: 'Could not get Razorpay key' });
