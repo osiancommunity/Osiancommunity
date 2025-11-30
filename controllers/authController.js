@@ -16,6 +16,7 @@ function logApp(message) {
 exports.register = async (req, res) => {
     try {
         const { name, email, password } = req.body || {};
+        const emailNorm = (email || '').trim().toLowerCase();
         if (!name || !email || !password) {
             return res.status(400).json({ message: 'Name, email, and password are required.' });
         }
@@ -23,13 +24,13 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: 'Password must be at least 6 characters.' });
         }
 
-        const existing = await User.findOne({ email });
+        const existing = await User.findOne({ email: emailNorm });
         if (existing) {
             return res.status(400).json({ message: 'User with this email already exists.' });
         }
 
-        const n = (name && name[0]) ? name[0].toLowerCase() : (email && email[0] ? email[0].toLowerCase() : 'u');
-        const sum = (email || '').toLowerCase().split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+        const n = (name && name[0]) ? name[0].toLowerCase() : (emailNorm && emailNorm[0] ? emailNorm[0].toLowerCase() : 'u');
+        const sum = (emailNorm || '').toLowerCase().split('').reduce((a, c) => a + c.charCodeAt(0), 0);
         const base = `@${n}${String(sum % 1000000).padStart(6, '0')}`;
         let username = `${base}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
         for (let i = 0; i < 5; i++) {
@@ -41,7 +42,7 @@ exports.register = async (req, res) => {
         const bcryptjs = require('bcryptjs');
         const salt = bcryptjs.genSaltSync(10);
         const hashed = bcryptjs.hashSync(password, salt);
-        const user = new User({ name, email, password: hashed, username });
+        const user = new User({ name, email: emailNorm, password: hashed, username });
         user._skipHash = true;
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         user.otp = otp;
@@ -145,11 +146,12 @@ exports.registerDebug = async (req, res) => {
  * @access  Public
  */
 exports.verifyOtp = async (req, res) => {
-    const { email, otp } = req.body;
+        const { email, otp } = req.body;
+        const emailNorm = (email || '').trim().toLowerCase();
 
     try {
         // 1. Find the user by email
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email: emailNorm });
 
         // 2. Validate OTP
         if (!user) {
@@ -258,9 +260,10 @@ exports.resendOtp = async (req, res) => {
  */
 exports.login = async (req, res) => {
     const { email, password } = req.body;
+    const emailNorm = (email || '').trim().toLowerCase();
 
     try {
-        console.log(`Login attempt for email: ${email}`);
+        console.log(`Login attempt for email: ${emailNorm}`);
 
         // Validate input
         if (!email || !password) {
@@ -271,14 +274,14 @@ exports.login = async (req, res) => {
         // Find user and include password for comparison
         let user;
         try {
-            user = await User.findOne({ email }).select('+password');
+            user = await User.findOne({ email: emailNorm }).select('+password');
         } catch (dbError) {
             console.error('Database error during user lookup:', dbError);
             return res.status(500).json({ message: 'Database error. Please try again later.' });
         }
 
         if (!user) {
-            console.log(`Login failed: User not found for email: ${email}`);
+            console.log(`Login failed: User not found for email: ${emailNorm}`);
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
@@ -292,13 +295,13 @@ exports.login = async (req, res) => {
         }
 
         if (!isPasswordValid) {
-            console.log(`Login failed: Invalid password for email: ${email}`);
+            console.log(`Login failed: Invalid password for email: ${emailNorm}`);
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
         // FIX: Check if the user's account is verified and active before allowing login.
         if (!user.isVerified) {
-            console.log(`Login failed: Account not verified for email: ${email}`);
+            console.log(`Login failed: Account not verified for email: ${emailNorm}`);
             return res.status(403).json({
                 message: 'Account not verified. Please verify your OTP.',
                 // Send userId so the frontend can offer to resend OTP.
@@ -306,7 +309,7 @@ exports.login = async (req, res) => {
             });
         }
         if (!user.isActive) {
-            console.log(`Login failed: Account deactivated for email: ${email}`);
+            console.log(`Login failed: Account deactivated for email: ${emailNorm}`);
             return res.status(403).json({ message: 'Your account has been deactivated. Please contact support.' });
         }
 
@@ -327,7 +330,7 @@ exports.login = async (req, res) => {
         // Prepare user object for response
         const userResponse = { _id: user._id, name: user.name, email: user.email, username: user.username, role: user.role, profile: user.profile };
 
-        console.log(`Login successful for email: ${email}, role: ${user.role}`);
+        console.log(`Login successful for email: ${emailNorm}, role: ${user.role}`);
         res.status(200).json({ success: true, token, user: userResponse });
 
     } catch (error) {
