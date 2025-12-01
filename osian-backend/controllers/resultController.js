@@ -70,10 +70,11 @@ const submitQuiz = async (req, res) => {
       passed = false;
     }
 
-    // For paid quizzes, set status to 'pending' and schedule release in 8-10 hours
-    const isPaidQuiz = quiz.quizType === 'paid';
-    const status = isPaidQuiz ? 'pending' : 'completed';
-    const releaseTime = isPaidQuiz ? new Date(Date.now() + 8 * 60 * 60 * 1000) : null; // 8 hours from now
+    // For paid quizzes, set status to 'pending' and schedule release in 8 hours
+    // EXCEPTION: Unlisted quizzes should release immediately (no pending)
+    const isPaidListedQuiz = quiz.quizType === 'paid' && String(quiz.visibility || 'public').toLowerCase() !== 'unlisted';
+    const status = isPaidListedQuiz ? 'pending' : 'completed';
+    const releaseTime = isPaidListedQuiz ? new Date(Date.now() + 8 * 60 * 60 * 1000) : null; // 8 hours from now
 
     const result = new Result({
       userId,
