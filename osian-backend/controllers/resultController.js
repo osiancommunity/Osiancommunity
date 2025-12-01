@@ -16,8 +16,9 @@ const submitQuiz = async (req, res) => {
       });
     }
 
-    // Enforce: only one submission per paid quiz per user
-    if (quiz.quizType === 'paid') {
+    // Enforce: only one submission per paid listed/private quiz per user
+    // Allow multiple submissions for unlisted paid quizzes
+    if (quiz.quizType === 'paid' && String(quiz.visibility || 'public').toLowerCase() !== 'unlisted') {
       const existingResult = await Result.findOne({ userId, quizId });
       if (existingResult) {
         return res.status(409).json({
