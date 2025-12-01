@@ -26,6 +26,13 @@ const resultSchema = new mongoose.Schema({
     enum: ['in-progress', 'completed', 'pending'],
     default: 'in-progress'
   },
+  cheatingViolation: {
+    type: String
+  },
+  violationCount: {
+    type: Number,
+    default: 0
+  },
   releaseTime: {
     type: Date
   },

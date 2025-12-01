@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 
 const submitQuiz = async (req, res) => {
   try {
-    const { quizId, answers, timeTaken, cheatingViolation } = req.body; // Added cheatingViolation
+    const { quizId, answers, timeTaken, cheatingViolation, violationCount } = req.body; // Added cheatingViolation
     const userId = req.user.id;
 
     const quiz = await Quiz.findById(quizId);
@@ -67,7 +67,7 @@ const submitQuiz = async (req, res) => {
     let passed = percentage >= (quiz.passingScore || 50); // Match frontend logic (score > 0.5)
 
     // If cheating violation detected, force fail regardless of score
-    if (cheatingViolation) {
+    if (cheatingViolation || (typeof violationCount === 'number' && violationCount >= 3)) {
       passed = false;
     }
 
@@ -85,7 +85,8 @@ const submitQuiz = async (req, res) => {
       status,
       passed,
       releaseTime,
-      cheatingViolation: cheatingViolation || false, // Store cheatingViolation flag or details
+      cheatingViolation: cheatingViolation || null,
+      violationCount: typeof violationCount === 'number' ? violationCount : 0,
       answers: detailedAnswers.filter(a => a !== null).map(answer => ({
         questionIndex: answer.questionIndex,
         selectedAnswer: answer.selectedAnswer,
