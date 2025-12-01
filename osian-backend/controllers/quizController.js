@@ -18,7 +18,8 @@ async function createQuiz(req, res) {
             scheduleTime,
             price,
             coverImage, // Base64 string
-            questions  // Array of question objects
+            questions,  // Array of question objects
+            visibility
         } = req.body;
 
         // --- 2. Basic Validation ---
@@ -37,6 +38,7 @@ async function createQuiz(req, res) {
             price,
             coverImage,
             questions,
+            visibility,
             createdBy: req.user.id // This comes from the auth middleware after token verification
         });
 
@@ -89,20 +91,21 @@ async function getQuizzes(req, res) {
             .populate('createdBy', 'name') // Only need creator name for user view
             .sort({ createdAt: -1 });
 
+        const isListed = q => String(q.visibility || 'public').toLowerCase() !== 'unlisted';
         const featured = {
-            live: allQuizzes.filter(q => q.quizType === 'live'),
-            paid: allQuizzes.filter(q => q.quizType === 'paid'),
-            upcoming: allQuizzes.filter(q => q.quizType === 'upcoming')
+            live: allQuizzes.filter(q => q.quizType === 'live' && isListed(q)),
+            paid: allQuizzes.filter(q => q.quizType === 'paid' && isListed(q)),
+            upcoming: allQuizzes.filter(q => q.quizType === 'upcoming' && isListed(q))
         };
 
         const categories = {
-            technical: allQuizzes.filter(q => q.category === 'technical'),
-            law: allQuizzes.filter(q => q.category === 'law'),
-            engineering: allQuizzes.filter(q => q.category === 'engineering'),
-            gk: allQuizzes.filter(q => q.category === 'gk'),
-            sports: allQuizzes.filter(q => q.category === 'sports'),
-            coding: allQuizzes.filter(q => q.category === 'coding'),
-            studies: allQuizzes.filter(q => q.category === 'studies')
+            technical: allQuizzes.filter(q => q.category === 'technical' && isListed(q)),
+            law: allQuizzes.filter(q => q.category === 'law' && isListed(q)),
+            engineering: allQuizzes.filter(q => q.category === 'engineering' && isListed(q)),
+            gk: allQuizzes.filter(q => q.category === 'gk' && isListed(q)),
+            sports: allQuizzes.filter(q => q.category === 'sports' && isListed(q)),
+            coding: allQuizzes.filter(q => q.category === 'coding' && isListed(q)),
+            studies: allQuizzes.filter(q => q.category === 'studies' && isListed(q))
         };
 
         res.status(200).json({ featured, categories });
@@ -185,7 +188,7 @@ async function updateQuiz(req, res) {
         }
 
         // Update fields from req.body
-        const { title, category, quizType, duration, registrationLimit, scheduleTime, price, coverImage, questions } = req.body;
+        const { title, category, quizType, duration, registrationLimit, scheduleTime, price, coverImage, questions, visibility } = req.body;
 
         quiz.title = title || quiz.title;
         quiz.category = category || quiz.category;
@@ -195,6 +198,7 @@ async function updateQuiz(req, res) {
         quiz.scheduleTime = scheduleTime !== undefined ? scheduleTime : quiz.scheduleTime;
         quiz.price = price !== undefined ? price : quiz.price;
         quiz.coverImage = coverImage || quiz.coverImage;
+        quiz.visibility = visibility || quiz.visibility;
         quiz.questions = questions || quiz.questions;
 
         // Recalculate status based on type and schedule
