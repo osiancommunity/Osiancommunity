@@ -27,7 +27,6 @@ const submitQuiz = async (req, res) => {
         });
       }
     }
-
     // For paid quizzes, check if the user is registered in the quiz's `participants` array.
     // Temporarily disabled for testing
     // if (quiz.quizType === 'paid') {
@@ -42,21 +41,35 @@ const submitQuiz = async (req, res) => {
     // }
 
     let correctAnswers = 0;
-    const detailedAnswers = answers.map((answer, index) => {
-      // Correctly use the questionIndex from the answer object
-      const question = quiz.questions[answer.questionIndex];
-      if (!question) {
-        // This case should ideally not happen if frontend sends valid data.
-        return null;
+    const detailedAnswers = answers.map((answer) => {
+      const q = quiz.questions[answer.questionIndex];
+      if (!q) return null;
+      let isCorrect = false;
+      let selectedAnswers = Array.isArray(answer.selectedAnswers) ? answer.selectedAnswers : undefined;
+      if (q.questionType === 'mcq') {
+        if (q.isMultiple) {
+          const expected = Array.isArray(q.correctAnswers) ? q.correctAnswers.slice().sort((a,b)=>a-b) : [];
+          const selected = Array.isArray(selectedAnswers)
+            ? selectedAnswers.slice().sort((a,b)=>a-b)
+            : (typeof answer.selectedAnswer === 'number' ? [answer.selectedAnswer] : []);
+          isCorrect = expected.length > 0 && selected.length === expected.length && expected.every((v,i)=>v===selected[i]);
+        } else {
+          const expectedSingle = typeof q.correctAnswer === 'number' ? q.correctAnswer : undefined;
+          isCorrect = typeof answer.selectedAnswer === 'number' && answer.selectedAnswer === expectedSingle;
+        }
+      } else {
+        isCorrect = false; // written/coding not auto-graded here
       }
-      const isCorrect = question.questionType === 'mcq' ? answer.selectedAnswer === question.correctAnswer : false;
       if (isCorrect) correctAnswers++;
 
       return {
         questionIndex: answer.questionIndex,
         selectedAnswer: answer.selectedAnswer,
+        selectedAnswers,
         writtenAnswer: answer.writtenAnswer,
         isCorrect,
+        correctIndices: Array.isArray(q.correctAnswers) ? q.correctAnswers : (typeof q.correctAnswer === 'number' ? [q.correctAnswer] : []),
+        explanation: q.explanation,
         timeSpent: answer.timeSpent || 0
       };
     });
@@ -90,8 +103,11 @@ const submitQuiz = async (req, res) => {
       answers: detailedAnswers.filter(a => a !== null).map(answer => ({
         questionIndex: answer.questionIndex,
         selectedAnswer: answer.selectedAnswer,
+        selectedAnswers: answer.selectedAnswers,
         writtenAnswer: answer.writtenAnswer,
         isCorrect: answer.isCorrect,
+        correctIndices: answer.correctIndices,
+        explanation: answer.explanation,
         timeSpent: answer.timeSpent
       })),
       timeTaken,

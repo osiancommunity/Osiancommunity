@@ -11,7 +11,10 @@ async function createQuiz(req, res) {
         // --- 1. Extract data from request ---
         const {
             title,
+            description,
             category,
+            field,
+            difficulty,
             quizType,
             duration,
             registrationLimit,
@@ -19,6 +22,7 @@ async function createQuiz(req, res) {
             price,
             coverImage, // Base64 string
             questions,  // Array of question objects
+            numQuestionsToShow,
             visibility
         } = req.body;
 
@@ -30,7 +34,10 @@ async function createQuiz(req, res) {
         // --- 3. Create new quiz instance ---
         const newQuiz = new Quiz({
             title,
+            description,
             category,
+            field,
+            difficulty,
             quizType,
             duration,
             registrationLimit,
@@ -38,8 +45,9 @@ async function createQuiz(req, res) {
             price,
             coverImage,
             questions,
+            numQuestionsToShow,
             visibility,
-            createdBy: req.user.id // This comes from the auth middleware after token verification
+            createdBy: req.user.id
         });
 
         // Status logic:
@@ -102,10 +110,8 @@ async function getQuizzes(req, res) {
             technical: allQuizzes.filter(q => q.category === 'technical' && isListed(q)),
             law: allQuizzes.filter(q => q.category === 'law' && isListed(q)),
             engineering: allQuizzes.filter(q => q.category === 'engineering' && isListed(q)),
-            gk: allQuizzes.filter(q => q.category === 'gk' && isListed(q)),
-            sports: allQuizzes.filter(q => q.category === 'sports' && isListed(q)),
-            coding: allQuizzes.filter(q => q.category === 'coding' && isListed(q)),
-            studies: allQuizzes.filter(q => q.category === 'studies' && isListed(q))
+            gk: allQuizzes.filter(q => (q.category === 'gk' || q.category === 'general' || q.category === 'generalKnowledge') && isListed(q)),
+            sports: allQuizzes.filter(q => q.category === 'sports' && isListed(q))
         };
 
         res.status(200).json({ featured, categories });
@@ -136,9 +142,8 @@ async function getQuizById(req, res) {
             try { await quiz.save(); } catch (_) {}
         }
 
-        // If a regular user, remove correct answers for security
+        // If a regular user, randomize questions and shuffle options; hide answers
         if (req.user && req.user.role === 'user') {
-            // Enforce schedule gate: do not expose questions before start time
             if (quiz.scheduleTime && new Date(quiz.scheduleTime) > new Date()) {
                 const startsAt = new Date(quiz.scheduleTime).toISOString();
                 return res.status(403).json({
@@ -147,16 +152,60 @@ async function getQuizById(req, res) {
                     code: 'SCHEDULED_NOT_STARTED'
                 });
             }
-            const quizForUser = quiz.toObject(); // Convert Mongoose document to plain object
-            quizForUser.questions = quizForUser.questions.map(q => {
-                if (q.questionType === 'mcq') {
-                    // Remove correctAnswer for MCQs
-                    const { correctAnswer, ...rest } = q;
-                    return rest;
+
+            const quizObj = quiz.toObject();
+            const total = Array.isArray(quizObj.questions) ? quizObj.questions.length : 0;
+            const count = Math.min(Number(quizObj.numQuestionsToShow || total) || total, total);
+            // Fisher-Yates shuffle clone
+            const indices = Array.from({ length: total }, (_, i) => i);
+            for (let i = total - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [indices[i], indices[j]] = [indices[j], indices[i]];
+            }
+            const selected = indices.slice(0, count).map(i => quizObj.questions[i]);
+            const randomizedQuestions = selected.map(q => {
+                if (q.questionType === 'mcq' && Array.isArray(q.options)) {
+                    // Shuffle options
+                    const opts = q.options.map((o, idx) => ({ ...o, __idx: idx }));
+                    for (let i = opts.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [opts[i], opts[j]] = [opts[j], opts[i]];
+                    }
+                    const cleanOpts = opts.map(o => ({ text: o.text, image: o.image }));
+                    return {
+                        questionText: q.questionText,
+                        questionType: q.questionType,
+                        questionImage: q.questionImage,
+                        marks: q.marks,
+                        isMultiple: !!q.isMultiple,
+                        options: cleanOpts
+                    };
                 }
-                return q; // Return written questions as is
+                // Written / coding
+                return {
+                    questionText: q.questionText,
+                    questionType: q.questionType,
+                    questionImage: q.questionImage,
+                    marks: q.marks,
+                    codeLanguage: q.codeLanguage,
+                    codeStarter: q.codeStarter
+                };
             });
-            return res.status(200).json(quizForUser);
+
+            return res.status(200).json({
+                _id: quizObj._id,
+                title: quizObj.title,
+                description: quizObj.description,
+                category: quizObj.category,
+                field: quizObj.field,
+                difficulty: quizObj.difficulty,
+                quizType: quizObj.quizType,
+                duration: quizObj.duration,
+                coverImage: quizObj.coverImage,
+                scheduleTime: quizObj.scheduleTime,
+                visibility: quizObj.visibility,
+                questions: randomizedQuestions
+            });
         }
 
         // Admins/Superadmins get full quiz data
@@ -188,10 +237,13 @@ async function updateQuiz(req, res) {
         }
 
         // Update fields from req.body
-        const { title, category, quizType, duration, registrationLimit, scheduleTime, price, coverImage, questions, visibility } = req.body;
+        const { title, description, category, field, difficulty, quizType, duration, registrationLimit, scheduleTime, price, coverImage, questions, numQuestionsToShow, visibility } = req.body;
 
         quiz.title = title || quiz.title;
+        quiz.description = description !== undefined ? description : quiz.description;
         quiz.category = category || quiz.category;
+        quiz.field = field !== undefined ? field : quiz.field;
+        quiz.difficulty = difficulty !== undefined ? difficulty : quiz.difficulty;
         quiz.quizType = quizType || quiz.quizType;
         quiz.duration = duration || quiz.duration;
         quiz.registrationLimit = registrationLimit !== undefined ? registrationLimit : quiz.registrationLimit;
@@ -199,7 +251,36 @@ async function updateQuiz(req, res) {
         quiz.price = price !== undefined ? price : quiz.price;
         quiz.coverImage = coverImage || quiz.coverImage;
         quiz.visibility = visibility || quiz.visibility;
-        quiz.questions = questions || quiz.questions;
+        quiz.numQuestionsToShow = numQuestionsToShow !== undefined ? numQuestionsToShow : quiz.numQuestionsToShow;
+
+        // Merge questions preserving existing images/explanations if not provided
+        if (Array.isArray(questions)) {
+            const existing = Array.isArray(quiz.questions) ? quiz.questions.map(q => q.toObject ? q.toObject() : q) : [];
+            quiz.questions = questions.map((qNew, idx) => {
+                const qOld = existing[idx] || {};
+                const merged = {
+                    questionText: qNew.questionText || qOld.questionText,
+                    questionType: qNew.questionType || qOld.questionType,
+                    questionImage: qNew.questionImage || qOld.questionImage,
+                    explanation: qNew.explanation !== undefined ? qNew.explanation : qOld.explanation,
+                    marks: qNew.marks !== undefined ? qNew.marks : (qOld.marks || 1),
+                    isMultiple: qNew.isMultiple !== undefined ? qNew.isMultiple : (qOld.isMultiple || false),
+                    codeLanguage: qNew.codeLanguage || qOld.codeLanguage,
+                    codeStarter: qNew.codeStarter !== undefined ? qNew.codeStarter : qOld.codeStarter
+                };
+                if ((qNew.questionType || qOld.questionType) === 'mcq') {
+                    const newOpts = Array.isArray(qNew.options) ? qNew.options : [];
+                    const oldOpts = Array.isArray(qOld.options) ? qOld.options : [];
+                    merged.options = newOpts.map((opt, i) => ({
+                        text: (opt && opt.text) || (oldOpts[i] && oldOpts[i].text) || '',
+                        image: (opt && opt.image) || (oldOpts[i] && oldOpts[i].image) || undefined
+                    }));
+                    merged.correctAnswer = qNew.correctAnswer !== undefined ? qNew.correctAnswer : qOld.correctAnswer;
+                    merged.correctAnswers = Array.isArray(qNew.correctAnswers) ? qNew.correctAnswers : (Array.isArray(qOld.correctAnswers) ? qOld.correctAnswers : undefined);
+                }
+                return merged;
+            });
+        }
 
         // Recalculate status based on type and schedule
         if (String(quiz.quizType).toLowerCase() === 'paid') {

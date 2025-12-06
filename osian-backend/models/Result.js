@@ -48,6 +48,7 @@ const resultSchema = new mongoose.Schema({
     selectedAnswer: {
       type: Number
     },
+    selectedAnswers: [{ type: Number }],
     writtenAnswer: {
       type: String
     },
@@ -55,6 +56,8 @@ const resultSchema = new mongoose.Schema({
       type: Boolean,
       required: true
     },
+    correctIndices: [{ type: Number }],
+    explanation: { type: String },
     timeSpent: {
       type: Number,
       default: 0

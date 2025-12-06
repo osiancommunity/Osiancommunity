@@ -1,17 +1,25 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
-// This is a sub-schema for the questions
+// Question sub-schema
 const questionSchema = new Schema(
   {
     questionText: { type: String, required: true },
-    questionType: {
-      type: String,
-      enum: ['mcq', 'written'],
-      required: true
-    },
-    options: [{ text: { type: String } }], // Only for 'mcq'
-    correctAnswer: { type: Number } // Only for 'mcq'
+    questionType: { type: String, enum: ['mcq', 'written', 'coding'], required: true },
+    questionImage: { type: String },
+    explanation: { type: String },
+    marks: { type: Number, default: 1 },
+    // MCQ-specific
+    isMultiple: { type: Boolean, default: false },
+    options: [{
+      text: { type: String },
+      image: { type: String }
+    }],
+    correctAnswer: { type: Number },
+    correctAnswers: [{ type: Number }],
+    // Coding-specific
+    codeLanguage: { type: String },
+    codeStarter: { type: String }
   },
   { _id: false }
 );
@@ -22,10 +30,13 @@ const quizSchema = new Schema({
         type: String,
         required: true
     },
+    description: { type: String },
     category: {
         type: String,
         required: true
     },
+    field: { type: String },
+    difficulty: { type: String, enum: ['basic', 'medium', 'hard'] },
     quizType: {
         type: String,
         enum: ['regular', 'live', 'upcoming', 'paid'],
@@ -59,6 +70,7 @@ const quizSchema = new Schema({
         default: 'public'
     },
     questions: [questionSchema], // An array of the new question schema
+    numQuestionsToShow: { type: Number },
     
     createdBy: {
         type: Schema.Types.ObjectId,
