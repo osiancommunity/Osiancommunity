@@ -178,18 +178,48 @@ if (!process.env.VERCEL) {
           const find = { scope, period };
           if (quizId) find.quizId = quizId;
           if (scope === 'batch') find.scopeRef = batchKey || null;
-          const rows = await LeaderboardEntry.find(find).sort({ compositeScore: -1 }).limit(10).populate('userId', 'name username profile');
+          const rows = await LeaderboardEntry.find(find).sort({ compositeScore: -1 }).limit(10).populate('userId', 'name username profile college');
+          const UserBadge = require('./models/UserBadge');
+          const userIds = rows.map(e => e.userId?._id).filter(Boolean);
+          const badgesByUser = {};
+          if (userIds.length > 0) {
+            const badgeDocs = await UserBadge.find({ userId: { $in: userIds } }).populate('badgeId', 'name icon');
+            for (const b of badgeDocs) {
+              const uid = String(b.userId);
+              if (!badgesByUser[uid]) badgesByUser[uid] = [];
+              badgesByUser[uid].push({ id: b.badgeId?._id, name: b.badgeId?.name, icon_url: b.badgeId?.icon || '' });
+            }
+          }
+          const Result = require('./models/Result');
+          const sparkByUser = {};
+          if (userIds.length > 0) {
+            const sparkDocs = await Result.aggregate([
+              { $match: { userId: { $in: userIds }, status: 'completed' } },
+              { $sort: { completedAt: -1 } },
+              { $project: { userId: 1, score: 1, totalQuestions: 1 } },
+            ]);
+            for (const s of sparkDocs) {
+              const uid = String(s.userId);
+              const pct = (Number(s.totalQuestions) || 0) > 0 ? (Number(s.score) / Number(s.totalQuestions)) * 100 : 0;
+              if (!sparkByUser[uid]) sparkByUser[uid] = [];
+              if (sparkByUser[uid].length < 12) sparkByUser[uid].push(Number(pct.toFixed(0)));
+            }
+          }
           ws.send(JSON.stringify({
             type: 'leaderboard',
             scope,
             period,
             leaderboard: rows.map((e, i) => ({
               rank: i + 1,
-              user: { id: e.userId._id, name: e.userId.name, username: e.userId.username, avatar: (e.userId.profile && e.userId.profile.avatar) || '' },
-              compositeScore: e.compositeScore,
-              avgScore: e.avgScore,
-              accuracy: e.accuracy,
-              attempts: e.attempts
+              user_id: e.userId?._id,
+              display_name: e.userId?.name,
+              avatar_url: (e.userId?.profile && e.userId.profile.avatar) || '',
+              college: e.userId?.college || '',
+              composite_score: e.compositeScore,
+              avg_score: e.avgScore,
+              attempts: e.attempts,
+              badges: badgesByUser[String(e.userId?._id)] || [],
+              sparkline: sparkByUser[String(e.userId?._id)] || []
             }))
           }));
         } catch (err) {
