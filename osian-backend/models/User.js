@@ -31,6 +31,11 @@ const ProfileSchema = new mongoose.Schema({
     },
     currentAddress: { // Admin-specific
         type: String
+    },
+    fieldPreference: { // User-selected field at registration
+        type: String,
+        enum: ['Technical','Law','Medical','General Knowledge','Social Studies'],
+        default: 'General Knowledge'
     }
 }, { _id: false }); // _id: false prevents Mongoose from creating a separate _id for the sub-document.
 
