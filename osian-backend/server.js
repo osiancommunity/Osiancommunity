@@ -95,6 +95,8 @@ const resultRoutes = require('./routes/resultRoutes');
 const mentorshipRoutes = require('./routes/mentorshipRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const leaderboardRoutes = require('./routes/leaderboardRoutes');
+const badgeRoutes = require('./routes/badgeRoutes');
 
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
@@ -104,6 +106,8 @@ app.use('/api/results', resultRoutes);
 app.use('/api/mentorship', mentorshipRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/badges', badgeRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -149,8 +153,71 @@ app.use((err, req, res, next) => {
 
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
+  const http = require('http');
+  const server = http.createServer(app);
+
+  // WebSocket server for real-time leaderboard
+  try {
+    const { rebuildScopeLeaderboard } = require('./controllers/leaderboardController');
+    const LeaderboardEntry = require('./models/LeaderboardEntry');
+    const WebSocket = require('ws');
+    const wss = new WebSocket.Server({ server, path: '/ws/leaderboard' });
+
+    wss.on('connection', (ws, req) => {
+      ws.isAlive = true;
+      ws.on('pong', () => { ws.isAlive = true; });
+      const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
+      const scope = String(params.get('scope') || 'global');
+      const period = String(params.get('period') || 'all');
+      const quizId = params.get('quizId') || null;
+      const batchKey = params.get('batchKey') || '';
+
+      const sendLeaderboard = async () => {
+        try {
+          await rebuildScopeLeaderboard({ scope, scopeRef: batchKey || null, quizId, period });
+          const find = { scope, period };
+          if (quizId) find.quizId = quizId;
+          if (scope === 'batch') find.scopeRef = batchKey || null;
+          const rows = await LeaderboardEntry.find(find).sort({ compositeScore: -1 }).limit(10).populate('userId', 'name username profile');
+          ws.send(JSON.stringify({
+            type: 'leaderboard',
+            scope,
+            period,
+            leaderboard: rows.map((e, i) => ({
+              rank: i + 1,
+              user: { id: e.userId._id, name: e.userId.name, username: e.userId.username, avatar: (e.userId.profile && e.userId.profile.avatar) || '' },
+              compositeScore: e.compositeScore,
+              avgScore: e.avgScore,
+              accuracy: e.accuracy,
+              attempts: e.attempts
+            }))
+          }));
+        } catch (err) {
+          try { ws.send(JSON.stringify({ type: 'error', message: 'Failed to load leaderboard' })); } catch (_) {}
+        }
+      };
+
+      sendLeaderboard();
+      const interval = setInterval(sendLeaderboard, 15000);
+      ws.on('close', () => clearInterval(interval));
+      ws.on('error', () => clearInterval(interval));
+    });
+
+    const interval = setInterval(() => {
+      wss.clients.forEach((ws) => {
+        if (!ws.isAlive) return ws.terminate();
+        ws.isAlive = false;
+        ws.ping();
+      });
+    }, 30000);
+    wss.on('close', () => clearInterval(interval));
+  } catch (err) {
+    console.warn('WebSocket leaderboard disabled:', err.message);
+  }
+
+  server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`WS leaderboard at ws://localhost:${PORT}/ws/leaderboard`);
   });
 }
 

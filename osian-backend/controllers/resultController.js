@@ -116,6 +116,24 @@ const submitQuiz = async (req, res) => {
 
     await result.save();
 
+    // Async post-submit updates
+    try {
+      const { rebuildScopeLeaderboard } = require('./leaderboardController');
+      const { awardBadgesForUser } = require('./badgeController');
+      // Update leaderboards: global/all, global/30d, global/7d, quiz-level for this quiz
+      await Promise.all([
+        rebuildScopeLeaderboard({ scope: 'global', period: 'all' }),
+        rebuildScopeLeaderboard({ scope: 'global', period: '30d' }),
+        rebuildScopeLeaderboard({ scope: 'global', period: '7d' }),
+        rebuildScopeLeaderboard({ scope: 'quiz', quizId, period: 'all' }),
+        rebuildScopeLeaderboard({ scope: 'quiz', quizId, period: '30d' }),
+        rebuildScopeLeaderboard({ scope: 'quiz', quizId, period: '7d' })
+      ]);
+      await awardBadgesForUser(userId);
+    } catch (e) {
+      console.warn('Post-submit updates failed:', e.message);
+    }
+
 
 
 

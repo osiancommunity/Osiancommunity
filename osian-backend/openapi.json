@@ -1,0 +1,42 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "OSIAN Backend API", "version": "1.0.0" },
+  "paths": {
+    "/api/leaderboard": {
+      "get": {
+        "summary": "Get leaderboard",
+        "parameters": [
+          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["global","batch","quiz"] }, "required": false },
+          { "name": "period", "in": "query", "schema": { "type": "string", "enum": ["all","30d","7d"] }, "required": false },
+          { "name": "quizId", "in": "query", "schema": { "type": "string" }, "required": false },
+          { "name": "batchKey", "in": "query", "schema": { "type": "string" }, "required": false },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 }, "required": false }
+        ],
+        "responses": {
+          "200": {
+            "description": "Leaderboard entries",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "leaderboard": { "type": "array", "items": { "type": "object", "properties": { "rank": { "type": "integer" }, "user": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "username": { "type": "string" }, "avatar": { "type": "string" } } }, "compositeScore": { "type": "number" }, "avgScore": { "type": "number" }, "accuracy": { "type": "number" }, "attempts": { "type": "integer" } } } } } } } }
+          },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/api/badges/me": {
+      "get": {
+        "summary": "Get badges for current user",
+        "responses": {
+          "200": { "description": "User badges" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    }
+  }
+}
+
