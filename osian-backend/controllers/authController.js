@@ -11,7 +11,7 @@ const { sendOTP, sendWelcomeEmail, sendPasswordResetEmail, sendPasswordResetOtpE
  * @access  Public
  */
 exports.register = async (req, res) => {
-    const { name, email, password, profile } = req.body;
+    const { name, email, password } = req.body;
 
     try {
         // 1. Check if user already exists
@@ -36,10 +36,7 @@ exports.register = async (req, res) => {
             name,
             email,
             password, // The pre-save hook in the model will hash this
-            username,
-            profile: {
-                ...(profile || {})
-            }
+            username
         });
 
         // 4. Generate and save OTP

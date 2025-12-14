@@ -1,15 +1,8 @@
 const Result = require('../models/Result');
 const User = require('../models/User');
 const LeaderboardEntry = require('../models/LeaderboardEntry');
-const UserBadge = require('../models/UserBadge');
 const { summarizeFromResults } = require('../utils/leaderboard');
-let redis;
-try {
-  const Redis = require('ioredis');
-  if (process.env.REDIS_URL) {
-    redis = new Redis(process.env.REDIS_URL);
-  }
-} catch (_) {}
+const jwt = require('jsonwebtoken');
 
 function periodToDateRange(period) {
   const now = new Date();
@@ -82,16 +75,6 @@ async function getLeaderboard(req, res) {
     const quizId = req.query.quizId || null;
     const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const batchKey = String(req.query.batchKey || '').trim();
-    const cacheKey = `lb:${scope}:${period}:${quizId || 'none'}:${batchKey || 'none'}:${limit}`;
-
-    if (redis) {
-      try {
-        const cached = await redis.get(cacheKey);
-        if (cached) {
-          return res.json(JSON.parse(cached));
-        }
-      } catch (_) {}
-    }
 
     // Rebuild on-demand to ensure fresh stats
     await rebuildScopeLeaderboard({ scope, scopeRef: batchKey || null, quizId, period });
@@ -103,57 +86,26 @@ async function getLeaderboard(req, res) {
     const entries = await LeaderboardEntry.find(find)
       .sort({ compositeScore: -1 })
       .limit(limit)
-      .populate('userId', 'name username profile college');
+      .populate('userId', 'name username profile');
 
-    const userIds = entries.map(e => e.userId?._id).filter(Boolean);
-    const badgesByUser = {};
-    if (userIds.length > 0) {
-      const badgeDocs = await UserBadge.find({ userId: { $in: userIds } }).populate('badgeId', 'name icon');
-      for (const b of badgeDocs) {
-        const uid = String(b.userId);
-        if (!badgesByUser[uid]) badgesByUser[uid] = [];
-        badgesByUser[uid].push({ id: b.badgeId?._id, name: b.badgeId?.name, icon_url: b.badgeId?.icon || '' });
-      }
-    }
-
-    const sparkByUser = {};
-    if (userIds.length > 0) {
-      const sparkDocs = await Result.aggregate([
-        { $match: { userId: { $in: userIds }, status: 'completed' } },
-        { $sort: { completedAt: -1 } },
-        { $project: { userId: 1, score: 1, totalQuestions: 1 } },
-      ]);
-      for (const s of sparkDocs) {
-        const uid = String(s.userId);
-        const pct = (Number(s.totalQuestions) || 0) > 0 ? (Number(s.score) / Number(s.totalQuestions)) * 100 : 0;
-        if (!sparkByUser[uid]) sparkByUser[uid] = [];
-        if (sparkByUser[uid].length < 12) sparkByUser[uid].push(Number(pct.toFixed(0)));
-      }
-    }
-
-    const payload = {
+    res.json({
       success: true,
       scope,
       period,
       leaderboard: entries.map((e, idx) => ({
         rank: idx + 1,
-        user_id: e.userId?._id,
-        display_name: e.userId?.name,
-        avatar_url: (e.userId?.profile && e.userId.profile.avatar) || '',
-        college: e.userId?.college || '',
-        composite_score: e.compositeScore,
-        avg_score: e.avgScore,
-        attempts: e.attempts,
-        badges: badgesByUser[String(e.userId?._id)] || [],
-        sparkline: sparkByUser[String(e.userId?._id)] || []
+        user: {
+          id: e.userId._id,
+          name: e.userId.name,
+          username: e.userId.username,
+          avatar: (e.userId.profile && e.userId.profile.avatar) || ''
+        },
+        compositeScore: e.compositeScore,
+        avgScore: e.avgScore,
+        accuracy: e.accuracy,
+        attempts: e.attempts
       }))
-    };
-
-    if (redis) {
-      try { await redis.set(cacheKey, JSON.stringify(payload), 'EX', 60); } catch (_) {}
-    }
-
-    res.json(payload);
+    });
   } catch (err) {
     console.error('Leaderboard error:', err);
     res.status(500).json({ success: false, message: 'Failed to get leaderboard' });
@@ -161,4 +113,72 @@ async function getLeaderboard(req, res) {
 }
 
 module.exports = { getLeaderboard, rebuildScopeLeaderboard };
+
+// --- Server-Sent Events stream for realtime leaderboard ---
+async function streamLeaderboard(req, res) {
+  try {
+    const scope = String(req.query.scope || 'global');
+    const period = String(req.query.period || 'all');
+    const quizId = req.query.quizId || null;
+    const batchKey = String(req.query.batchKey || '').trim();
+    const token = String(req.query.access_token || '');
+
+    if (token) {
+      try {
+        jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key-for-development');
+      } catch (_) {
+        // For SSE, allow anonymous access rather than closing with error
+      }
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    let closed = false;
+    req.on('close', () => { closed = true; clearInterval(timer); });
+
+    const send = async () => {
+      try {
+        await rebuildScopeLeaderboard({ scope, scopeRef: scope === 'batch' ? (batchKey || null) : null, quizId, period });
+        const find = { scope, period };
+        if (quizId) find.quizId = quizId;
+        if (scope === 'batch') find.scopeRef = batchKey || null;
+        const entries = await LeaderboardEntry.find(find)
+          .sort({ compositeScore: -1 })
+          .limit(Math.min(parseInt(req.query.limit) || 10, 100))
+          .populate('userId', 'name username profile');
+        const payload = {
+          type: 'leaderboard',
+          leaderboard: entries.map((e, idx) => ({
+            rank: idx + 1,
+            user: {
+              id: e.userId._id,
+              name: e.userId.name,
+              username: e.userId.username,
+              avatar: (e.userId.profile && e.userId.profile.avatar) || ''
+            },
+            compositeScore: e.compositeScore,
+            avgScore: e.avgScore,
+            accuracy: e.accuracy,
+            attempts: e.attempts
+          }))
+        };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      } catch (err) {
+        // Write as a soft error and keep the stream
+        res.write(`data: ${JSON.stringify({ type: 'error', message: 'update_failed' })}\n\n`);
+      }
+    };
+
+    await send();
+    const timer = setInterval(send, 10000);
+  } catch (err) {
+    try {
+      res.status(500).end();
+    } catch (_) {}
+  }
+}
+
+module.exports.streamLeaderboard = streamLeaderboard;
 
